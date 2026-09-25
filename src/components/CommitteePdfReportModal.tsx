@@ -13,11 +13,14 @@ import {
   Layers,
   Award,
   ShieldCheck,
+  ShieldAlert,
+  Scale,
   RotateCcw
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { FullAnalysisResponse, TORDocument, MemorandumData } from '../types';
+import { evaluateLegalCompliance } from '../utils/legalComplianceChecker';
 
 interface CommitteePdfReportModalProps {
   isOpen: boolean;
@@ -436,11 +439,22 @@ export const CommitteePdfReportModal: React.FC<CommitteePdfReportModalProps> = (
                     <thead>
                       <tr className="bg-slate-100 text-slate-800">
                         <th className="border border-slate-300 p-2 text-left w-28">ประเด็นการวิเคราะห์</th>
-                        {analysisData.torDetails.map((td) => (
-                          <th key={td.torId} className="border border-slate-300 p-2 text-left">
-                            {td.torName}
-                          </th>
-                        ))}
+                        {analysisData.torDetails.map((td) => {
+                          const legal = evaluateLegalCompliance(td);
+                          return (
+                            <th key={td.torId} className="border border-slate-300 p-2 text-left">
+                              <div className="flex items-center justify-between gap-1 mb-0.5">
+                                <span className="font-bold text-slate-900">{td.torName}</span>
+                                {legal.hasViolation && (
+                                  <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded border border-red-300">
+                                    <ShieldAlert className="w-3 h-3 text-red-600" />
+                                    <span>เสี่ยงขัด พ.ร.บ.</span>
+                                  </span>
+                                )}
+                              </div>
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
                     <tbody>
@@ -530,6 +544,50 @@ export const CommitteePdfReportModal: React.FC<CommitteePdfReportModalProps> = (
                     </tbody>
                   </table>
                 </div>
+
+                {/* รายงานผลการตรวจสอบเทียบกับ พ.ร.บ. จัดซื้อจัดจ้างฯ */}
+                {(() => {
+                  const torIssues = analysisData.torDetails
+                    .map((td) => ({
+                      tor: td,
+                      legal: evaluateLegalCompliance(td),
+                    }))
+                    .filter((item) => item.legal.violations.length > 0);
+
+                  if (torIssues.length === 0) return null;
+
+                  return (
+                    <div className="mt-3 p-3 bg-red-50/70 border border-red-200 rounded-lg text-xs space-y-2">
+                      <div className="font-bold text-red-900 flex items-center gap-1.5 font-['Prompt',sans-serif]">
+                        <ShieldAlert className="w-4 h-4 text-red-600" />
+                        <span>ข้อสังเกตความสอดคล้องตาม พ.ร.บ. การจัดซื้อจัดจ้างภาครัฐ พ.ศ. ๒๕๖๐ (Legal Audit):</span>
+                      </div>
+                      <div className="space-y-1.5 text-slate-800 text-[11px] leading-relaxed">
+                        {torIssues.map(({ tor, legal }) => (
+                          <div key={tor.torId} className="pl-2 border-l-2 border-red-500 py-0.5">
+                            <span className="font-bold text-slate-900">{tor.torName}: </span>
+                            {legal.violations.map((v, i) => (
+                              <span key={i} className="inline-block mr-2">
+                                <span
+                                  className={
+                                    v.severity === 'violation'
+                                      ? 'text-red-700 font-bold'
+                                      : 'text-amber-800 font-medium'
+                                  }
+                                >
+                                  [{v.issueTitle}]
+                                </span>{' '}
+                                <span className="text-slate-600">
+                                  ({v.lawSection} - คำแนะนำ: {v.recommendation})
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </section>
 
               {/* ข้อ ๕: การวิเคราะห์ความเหมือน ความต่าง และไฮไลท์ */}

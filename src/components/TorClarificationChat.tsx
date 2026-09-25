@@ -8,9 +8,11 @@ import {
   ShieldCheck,
   RefreshCw,
   HelpCircle,
-  FileSearch
+  FileSearch,
+  AlertCircle
 } from 'lucide-react';
 import { TORDocument } from '../types';
+import { safeFetchJson, formatFriendlyErrorMessage, isPageNotJsonError } from '../utils/apiClient';
 
 interface TorClarificationChatProps {
   activeDocuments: TORDocument[];
@@ -57,16 +59,20 @@ export const TorClarificationChat: React.FC<TorClarificationChatProps> = ({ acti
         docsContext += `\n[เอกสารที่ ${idx + 1}: ${doc.title} (${doc.filename})]\n${doc.content.substring(0, 10000)}\n`;
       });
 
-      const res = await fetch('/api/ask-tor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: q,
-          torsContext: docsContext,
-        }),
-      });
+      const data = await safeFetchJson<any>(
+        '/api/ask-tor',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: q,
+            torsContext: docsContext,
+          }),
+        },
+        1,
+        1500
+      );
 
-      const data = await res.json();
       const botMsg: ChatMessage = {
         id: 'b_' + Date.now(),
         sender: 'assistant',
@@ -77,12 +83,16 @@ export const TorClarificationChat: React.FC<TorClarificationChatProps> = ({ acti
       };
       setMessages((prev) => [...prev, botMsg]);
     } catch (err: any) {
+      const friendlyText = isPageNotJsonError(err)
+        ? 'เซิร์ฟเวอร์หรือเครือข่ายตอบกลับด้วยหน้าสถานะชั่วคราว ("The page cannot be loaded" / Proxy Error) แทนข้อมูลตอบคำถาม กรุณารอสักครู่แล้วลองส่งคำถามใหม่อีกครั้ง'
+        : 'ไม่สามารถติดต่อระบบตอบคำถามได้: ' + formatFriendlyErrorMessage(err);
+
       setMessages((prev) => [
         ...prev,
         {
           id: 'err_' + Date.now(),
           sender: 'assistant',
-          text: 'ไม่สามารถติดต่อระบบตอบคำถามได้: ' + (err?.message || err),
+          text: friendlyText,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);

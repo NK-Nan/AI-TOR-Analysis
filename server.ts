@@ -298,6 +298,11 @@ app.post('/api/analyze-tors', async (req, res) => {
    พร้อมระบุเหตุผลประกอบคะแนนอย่างละเอียด
 4. วิเคราะห์ให้ครบ 8 ประเด็นของแต่ละ TOR (ชื่อ TOR, บริษัทหรือผู้ยื่น TOR, ระยะเวลา, ขอบเขตการพัฒนาระบบ, ซอฟต์แวร์ฮาร์ดแวร์, การส่งมอบงาน, ราคา, ความเชี่ยวชาญของบริษัทหรือผู้พัฒนา)
    สำคัญ: ในหัวข้อความเชี่ยวชาญ (ประเด็นที่ ๘) ให้สกัดทั้ง "ชื่อผู้เชี่ยวชาญหรือบุคลากรหลัก" (expertNames เช่น วุฒิการศึกษา ใบ กว. หรือบทบาท) และ "ความเชี่ยวชาญของบริษัท/ผลงาน" (expertise) หากเอกสารไม่ได้ระบุชื่อผู้เชี่ยวชาญ ให้ระบุว่า "ไม่ปรากฏชื่อผู้เชี่ยวชาญในเอกสาร"
+5. ตรวจสอบเนื้อหา TOR เทียบกับข้อกำหนดทางกฎหมาย ตาม พ.ร.บ. การจัดซื้อจัดจ้างและการบริหารพัสดุภาครัฐ พ.ศ. ๒๕๖๐ และหนังสือเวียนที่เกี่ยวข้อง:
+   - มาตรา ๙ วรรคหนึ่ง: ห้ามมิให้กำหนดคุณลักษณะเฉพาะใกล้เคียงยี่ห้อใด หรือเจาะจงผู้ขายรายใดรายหนึ่งโดยไม่มีคำว่า "หรือเทียบเท่า"
+   - หนังสือเวียน กวจ. ด่วนที่สุด ที่ กค (กวจ) ๐๔๐๕.๒/ว ๑๑๕: การกำหนดเงื่อนไขหนังสือรับรองตัวแทนจำหน่ายจากผู้ผลิตที่เข้าข่ายจำกัดการแข่งขัน
+   - เกณฑ์ตรวจรับพัสดุตามมาตรา ๑๐๐ และระเบียบกระทรวงการคลังฯ
+   หากตรวจพบประเด็นที่อาจขัดต่อกฎหมาย ให้ระบุใน legalCompliance (hasViolation: true, severity: 'violation' หรือ 'warning') พร้อมมาตราและคำแนะนำ
    วิเคราะห์ความเหมือน, ความต่าง, ไฮไลท์ จุดเด่น และ จุดด้อย ของแต่ละ TOR และข้อเสนอแนะเจ้าหน้าที่พัสดุ
 ตอบกลับเป็น JSON เท่านั้น ตามโครงสร้างที่ระบุ`;
 
@@ -322,7 +327,24 @@ ${customPrompt ? `\nหมายเหตุหรือประเด็นเ
       "expertise": "ความเชี่ยวชาญของบริษัทหรือทีมงาน ผลงานที่ผ่านมา และมาตรฐานที่ได้รับรอง",
       "highlightPoints": ["จุดเด่นไฮไลท์ 1", "จุดเด่นไฮไลท์ 2"],
       "strengths": ["จุดเด่น 1", "จุดเด่น 2"],
-      "weaknesses": ["จุดด้อย 1", "จุดด้อย 2"]
+      "weaknesses": ["จุดด้อย 1", "จุดด้อย 2"],
+      "legalCompliance": {
+        "hasViolation": false,
+        "violationCount": 0,
+        "warningCount": 0,
+        "riskLevel": "low",
+        "violations": [
+          {
+            "aspectId": "tech หรือ expertise หรือ deliverables ฯลฯ",
+            "aspectName": "ชื่อประเด็นที่พบปัญหา",
+            "severity": "violation หรือ warning",
+            "lawSection": "พ.ร.บ. การจัดซื้อจัดจ้างฯ พ.ศ. ๒๕๖๐ มาตรา ๙",
+            "issueTitle": "หัวข้อปัญหาทางกฎหมาย",
+            "description": "รายละเอียดข้อความใน TOR ที่เข้าข่ายขัดระเบียบ",
+            "recommendation": "แนวทางการแก้ไขปรับปรุงให้ถูกต้อง"
+          }
+        ]
+      }
     }
   ],
   "similarities": [
@@ -413,8 +435,32 @@ ${customPrompt ? `\nหมายเหตุหรือประเด็นเ
     } catch (parseErr) {
       const match = responseText.match(/\{[\s\S]*\}/);
       if (match) {
-        parsed = JSON.parse(match[0]);
+        try {
+          parsed = JSON.parse(match[0]);
+        } catch {
+          const fallbackPath = path.join(process.cwd(), 'server_data', 'initial_analysis.json');
+          if (fs.existsSync(fallbackPath)) {
+            const cached = JSON.parse(fs.readFileSync(fallbackPath, 'utf8'));
+            return res.json({
+              success: true,
+              fromCache: true,
+              warning: 'ไม่สามารถแปลงผลการวิเคราะห์เป็น JSON ได้ จึงนำข้อมูลอ้างอิงจากฐานข้อมูลมาแสดงผล',
+              data: cached,
+            });
+          }
+          throw new Error('ไม่สามารถแปลงผลลัพธ์จาก AI เป็น JSON ได้');
+        }
       } else {
+        const fallbackPath = path.join(process.cwd(), 'server_data', 'initial_analysis.json');
+        if (fs.existsSync(fallbackPath)) {
+          const cached = JSON.parse(fs.readFileSync(fallbackPath, 'utf8'));
+          return res.json({
+            success: true,
+            fromCache: true,
+            warning: 'ไม่สามารถแปลงผลการวิเคราะห์เป็น JSON ได้ จึงนำข้อมูลอ้างอิงจากฐานข้อมูลมาแสดงผล',
+            data: cached,
+          });
+        }
         throw new Error('ไม่สามารถแปลงผลลัพธ์เป็น JSON ได้');
       }
     }
@@ -442,6 +488,17 @@ ${customPrompt ? `\nหมายเหตุหรือประเด็นเ
     });
   } catch (err: any) {
     console.error('Error analyzing TORs:', err);
+    // Intelligent fallback to cached initial analysis if available
+    const fallbackPath = path.join(process.cwd(), 'server_data', 'initial_analysis.json');
+    if (fs.existsSync(fallbackPath)) {
+      const cached = JSON.parse(fs.readFileSync(fallbackPath, 'utf8'));
+      return res.json({
+        success: true,
+        fromCache: true,
+        warning: 'การเชื่อมต่อระบบ AI ขัดข้องชั่วคราว (' + (err?.message || 'Error') + ') ระบบจึงแสดงผลการประเมินอ้างอิงเพื่อความต่อเนื่อง',
+        data: cached,
+      });
+    }
     res.status(500).json({ success: false, error: 'การประเมินผิดพลาด: ' + (err?.message || err) });
   }
 });
@@ -449,15 +506,17 @@ ${customPrompt ? `\nหมายเหตุหรือประเด็นเ
 // 5. Chat or clarification endpoint for procurement officer Q&A
 app.post('/api/ask-tor', async (req, res) => {
   try {
-    const { question, tors } = req.body;
+    const { question, tors, torsContext } = req.body;
     if (!question) {
       return res.status(400).json({ success: false, error: 'กรุณากรอกคำถาม' });
     }
 
-    let docsContext = '';
-    (tors || []).forEach((tor: any, index: number) => {
-      docsContext += `\n\n[เอกสาร TOR ${index + 1}: ${tor.title} (ID: ${tor.id})]\n${tor.content || tor.extractedText || ''}\n`;
-    });
+    let docsContext = torsContext || '';
+    if (!docsContext && Array.isArray(tors)) {
+      tors.forEach((tor: any, index: number) => {
+        docsContext += `\n\n[เอกสาร TOR ${index + 1}: ${tor.title} (ID: ${tor.id})]\n${tor.content || tor.extractedText || ''}\n`;
+      });
+    }
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash',
@@ -471,8 +530,26 @@ app.post('/api/ask-tor', async (req, res) => {
 
     res.json({ success: true, answer: response.text });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Error in /api/ask-tor:', err);
+    res.status(500).json({ success: false, error: err?.message || 'ไม่สามารถประมวลผลคำตอบได้' });
   }
+});
+
+// Ensure all unmatched /api/* calls return JSON 404, never Vite HTML
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ success: false, error: `ไม่พบ API endpoint: ${req.method} ${req.path}` });
+});
+
+// Global API error handler ensuring JSON response
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.path.startsWith('/api')) {
+    console.error('API Error:', err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์',
+    });
+  }
+  next(err);
 });
 
 // Vite / Static setup

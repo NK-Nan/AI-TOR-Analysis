@@ -60,6 +60,24 @@ export interface MemorandumData {
   officerPosition: string;
 }
 
+export interface LegalViolationItem {
+  aspectId?: 'name' | 'company' | 'duration' | 'scope' | 'softwareHardware' | 'tech' | 'deliverables' | 'price' | 'expertise' | string;
+  aspectName?: string;
+  severity: 'violation' | 'warning'; // violation = สีแดง (เสี่ยงขัด พ.ร.บ.), warning = สีส้ม/เหลือง (ข้อพึงระวัง)
+  lawSection: string; // e.g. "มาตรา ๙ พ.ร.บ. การจัดซื้อจัดจ้างฯ พ.ศ. ๒๕๖๐"
+  issueTitle: string;
+  description: string;
+  recommendation: string;
+}
+
+export interface LegalComplianceSummary {
+  hasViolation: boolean;
+  violationCount: number;
+  warningCount: number;
+  riskLevel: 'high' | 'medium' | 'low';
+  violations: LegalViolationItem[];
+}
+
 export interface TORDetail {
   torId: string;
   torName: string;
@@ -74,6 +92,7 @@ export interface TORDetail {
   highlightPoints: string[];
   strengths: string[];
   weaknesses: string[];
+  legalCompliance?: LegalComplianceSummary;
 }
 
 export interface TORComparisonItem {
